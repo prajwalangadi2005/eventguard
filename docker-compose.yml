@@ -1,0 +1,76 @@
+# docker-compose.yml
+#
+# LEARNING NOTE:
+# Docker Compose lets you define multiple "services" (containers)
+# in one file and start them all with: docker compose up -d
+#
+# Each service = one isolated program running in a container.
+# They talk to each other over a private internal network.
+#
+# We define 3 services:
+#   1. postgres  — our SQL database (with pgvector pre-installed)
+#   2. mongodb   — our NoSQL database for activity logs
+#   3. pgadmin   — a web UI to visually browse your PostgreSQL tables
+
+services:
+
+  # ──────────────────────────────────────────────
+  # 1. PostgreSQL with pgvector
+  #    Image: pgvector/pgvector — it's official PostgreSQL
+  #    but with the pgvector extension pre-bundled.
+  # ──────────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17        # PostgreSQL 17 + pgvector
+    container_name: eventguard_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123     # change this if you want
+      POSTGRES_DB: eventguard
+    ports:
+      - "5432:5432"                      # host:container — connect on localhost:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data   # data persists even if container stops
+      - ./database:/docker-entrypoint-initdb.d   # auto-runs schema.sql + seed.sql on first start!
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d eventguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ──────────────────────────────────────────────
+  # 2. MongoDB
+  # ──────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    container_name: eventguard_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: eventguard_logs
+    ports:
+      - "27017:27017"                    # connect on localhost:27017
+    volumes:
+      - mongo_data:/data/db
+
+  # ──────────────────────────────────────────────
+  # 3. pgAdmin (optional but very useful!)
+  #    A web UI at http://localhost:5050 to visually
+  #    browse your tables, run queries, and see data.
+  # ──────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: eventguard_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@eventguard.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"                        # open http://localhost:5050 in browser
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# Named volumes — Docker manages these on your disk
+volumes:
+  postgres_data:
+  mongo_data:
